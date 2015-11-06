@@ -1,7 +1,11 @@
+from datetime import datetime
+import json
 from django.views import generic
+from django.http import HttpResponseForbidden, JsonResponse
 from zentral.contrib.osquery.models import Node
 from zentral.core.stores import frontend_store
-from . import inventory
+from . import inventory, api_key
+from .events import post_inventory_event
 
 
 class IndexView(generic.ListView):
@@ -79,3 +83,33 @@ class MachineEventsView(generic.ListView):
         self.machine = inventory.machine(self.kwargs['serial_number'])
         et = self.request.GET.get('event_type')
         return MachineEventSet(self.machine['serial_number'], et)
+
+class MachineAPIView(generic.View):
+    def post(self, request):
+        err = None
+        if api_key is None:
+            err = "API endpoint improperly configured. Missing API key."
+        elif request.META.get('HTTP_ZENTRAL_INVENTORY_API_KEY', None) != api_key:
+            err = "Missing or invalid API key in request."
+        if err:
+            return HttpResponseForbidden(err)
+        machine_d = json.loads(request.read().decode('utf-8'))
+        # set some missing elements
+        machine_d['last_contact_at'] = datetime.utcnow()
+        machine_d['last_report_at'] = datetime.utcnow()
+        ip = self.request.META.get("HTTP_X_REAL_IP", "")
+        if not machine_d.get('public_ip_address', None) and ip:
+            machine_d['public_ip_address'] = ip
+        # fix the osx apps attribute
+        osx_apps = [[app_d['name'], app_d['version']] for app_d in machine_d.pop('osx_apps', [])]
+        osx_apps.sort(key=lambda t: (t[0].upper(), t[1]))
+        machine_d['osx_apps'] = osx_apps
+        # sync the inventory cache
+        machine_d, event_payload = inventory.sync_machine(machine_d)
+        if event_payload:
+            user_agent = self.request.META.get("HTTP_USER_AGENT", "")
+            post_inventory_event(machine_d['serial_number'],
+                                 event_payload,
+                                 user_agent=user_agent,
+                                 ip=ip)
+        return JsonResponse(event_payload)

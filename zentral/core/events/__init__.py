@@ -95,10 +95,10 @@ class EventRequest(object):
 class EventMetadata(object):
     def __init__(self, event_type, **kwargs):
         self.event_type = event_type
-        self.uuid = kwargs.pop('uuid', uuid.uuid4())
+        self.uuid = kwargs.pop('uuid', None) or uuid.uuid4()
         if isinstance(self.uuid, str):
             self.uuid = uuid.UUID(self.uuid)
-        self.index = int(kwargs.pop('index', 0))
+        self.index = int(kwargs.pop('index', None) or 0)
         self.created_at = kwargs.pop('created_at', datetime.utcnow())
         if isinstance(self.created_at, str):
             self.created_at = parser.parse(self.created_at)

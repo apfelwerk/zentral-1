@@ -16,8 +16,7 @@ SLEEP = 20
 def sync_inventory():
     pk = uuid.uuid4()
     for index, (machine_d, payload) in enumerate(inventory.sync()):
-        post_inventory_event(machine_d['serial_number'], payload, pk, index)
-
+        post_inventory_event(machine_d['serial_number'], payload, uuid=pk, index=index)
 
 def push_inventory_metrics():
     metrics = inventory.metrics()

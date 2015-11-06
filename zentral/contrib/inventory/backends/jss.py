@@ -91,7 +91,10 @@ class InventoryClient(BaseInventory):
             yield machine
 
     def _get_inv_link(self, md):
-        return self.inv_url_tmpl % md[self._inv_reference_key()]
+        try:
+            return self.inv_url_tmpl % md[self._inv_reference_key()]
+        except KeyError:
+            logger.exception("Can't build inv link")
 
     def add_machine_to_group(self, md, group_name):
         inv_ref_key = self._inv_reference_key()

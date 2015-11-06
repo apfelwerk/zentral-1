@@ -90,32 +90,44 @@ class BaseInventory(object):
         return self._get_machines()
 
     # inventory API
+    def sync_machine(self, machine_d):
+        s_machine_d = self._get_serializable_machine_d_copy(machine_d)
+        self._add_links_to_machine_d(s_machine_d)
+        msn = machine_d['serial_number']
+        old_d = self._redis_get(msn)
+        if old_d is None or old_d.get('trashed_at', None):
+            # NEW MACHINE
+            machine_d['created_at'] = datetime.utcnow()
+            machine_d['synced_at'] = datetime.utcnow()
+            self._redis_set(msn, machine_d)
+            return s_machine_d, {'action': 'added'}
+        else:
+            # UPDATE ?
+            diff_d = {}
+            for key, val in machine_d.items():
+                if old_d.get(key, None) != val:
+                    import pprint
+                    pprint.pprint(old_d.get(key, None))
+                    pprint.pprint(val)
+                    diff_d[key] = val
+            machine_d['created_at'] = old_d['created_at']
+            machine_d['synced_at'] = datetime.utcnow()
+            self._redis_set(msn, machine_d)
+            if diff_d:
+                return s_machine_d, {'action': 'changed',
+                                     'diff': self._get_serializable_machine_d_copy(diff_d)}
+            else:
+                return s_machine_d, None
+
     def sync(self):
         msn_list = []
+        # sync existing machines
         for machine_d in self._get_machines():
-            s_machine_d = self._get_serializable_machine_d_copy(machine_d)
-            self._add_links_to_machine_d(s_machine_d)
-            msn = machine_d['serial_number']
-            msn_list.append(msn)
-            old_d = self._redis_get(msn)
-            if old_d is None or old_d.get('trashed_at', None):
-                # NEW MACHINE
-                machine_d['created_at'] = datetime.utcnow()
-                machine_d['synced_at'] = datetime.utcnow()
-                self._redis_set(msn, machine_d)
-                yield s_machine_d, {'action': 'added'}
-            else:
-                # UPDATE ?
-                diff_d = {}
-                for key, val in machine_d.items():
-                    if old_d.get(key, None) != val:
-                        diff_d[key] = val
-                machine_d['created_at'] = old_d['created_at']
-                machine_d['synced_at'] = datetime.utcnow()
-                self._redis_set(msn, machine_d)
-                if diff_d:
-                    yield s_machine_d, {'action': 'changed',
-                                        'diff': self._get_serializable_machine_d_copy(diff_d)}
+            msn_list.append(machine_d['serial_number'])
+            s_machine_d, event_payload = self.sync_machine(machine_d)
+            if event_payload:
+                yield s_machine_d, event_payload
+        # remove deleted machines
         for msn in self._r.smembers(self._redis_all_serial_number_key()):
             msn = msn.decode('utf-8')
             if msn not in msn_list:
