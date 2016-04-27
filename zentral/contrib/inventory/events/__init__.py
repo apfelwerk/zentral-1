@@ -26,6 +26,8 @@ def _inventory_event_tags_from_data(data):
         tags.append('osx_app_change')
     if 'os_version' in diff:
         tags.append('os_change')
+    if 'reference' in diff:
+        tags.append('reference')
     return tags
 
 
